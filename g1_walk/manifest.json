@@ -1,0 +1,18 @@
+{
+  "server": "A10",
+  "source_path": "/home/ubuntu/binjie/unitree_rl_gym/logs/g1_walk/Oct03_16-32-54_/model_3000.pt",
+  "repository_remote": "https://gitcode.com/GitHub_Trending/un/unitree_rl_gym.git",
+  "repository_commit": "276801e46c5d433564f24658bac64f254b7d2d4b",
+  "rsl_rl_commit": "2ad79cf0caa85b91721abfe358105f869a784121",
+  "uncommitted_training_changes_preserved": [
+    "legged_gym/envs/__init__.py",
+    "legged_gym/envs/g1/g1_config.py",
+    "scripts/"
+  ],
+  "real_config_change": "policy_path points to exported checkpoint; max_cmd reduced to training lateral/yaw ranges [0.8, 0.2, 0.5]",
+  "files": {
+    "model_3000.pt": "19ec0bf18c9d25da5c07d0d19d779de92a4bcd725157fd3a7dfa74efbbd3258d",
+    "policy_lstm_1.pt": "20c551701f405116f8cd6165eb78de47e475fbf74643391b9ec1f2bab5dcb757",
+    "unitree_rl_gym_source.tar.gz": "3475e7c671a5f6ae06e16e6ba0e8e1f2b689f921afbd739864b66393ed90375b"
+  }
+}
