@@ -1,0 +1,24 @@
+ros: 2
+node: rerun_topic_bridge
+
+topics:
+
+  - name: cmd_vel
+    topic: /cmd_vel
+    type: scalar
+    msg: geometry_msgs/msg/Twist
+    time:
+    value: [linear.x, angular.z]
+
+  - name: livox_imu_gyro          # Mid360 激光 IMU 角速度
+    topic: /utlidar/imu_livox_mid360
+    type: scalar
+    msg: sensor_msgs/msg/Imu
+    time:
+    value: [angular_velocity.x, angular_velocity.y, angular_velocity.z]
+
+  - name: livox_lidar
+    topic: /utlidar/cloud_livox_mid360
+    type: points
+    max_hz: 5
+    max_points: 50000
