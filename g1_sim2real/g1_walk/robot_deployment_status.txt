@@ -1,0 +1,38 @@
+部署主机：SSH unitree（192.168.1.107:2222）
+容器：g1-lab-dev
+持久化目录：/workspace/g1_walk
+Python：/opt/miniconda3/envs/pms-py312/bin/python（PyTorch 2.4.0）
+独立 .deps：numpy 1.26.4、scipy 1.13.1、PyYAML 6.0.3、cyclonedds 0.10.2
+模型：unitree_rl_gym/deploy/models/g1_walk_Oct03_16-32-54/policy_lstm_3000.pt
+SDK：/opt/unitree_sdk2_python
+接口：eth0，PR 模式
+
+2026-10-03 真机试验记录：
+首次试验官方 ai 控制器仍处 FSM4，未确认控制权释放；姿态准备失败，前进命令为0。操作者报告关节异响。
+只读诊断确认 ai 占用且持续 rt/lowcmd；29电机 motorstate 均为0。
+调用官方 MotionSwitcherClient.ReleaseMode() 后返回成功，连续6次 CheckMode() name为空，最后1秒外部 lowcmd为0；操作者确认异响消失。
+已加入启动前及运行中控制权验证。
+第二次试验姿态准备通过，发2次前进策略后因额外机械目标限位停止并阻尼。
+操作者明确要求不增加限位、直接模型输出，已提供 --raw-policy 模式：不裁剪目标，且不使用额外关节位置、跳变、跟踪误差、力矩、倾角/速度中止条件。仍保留非有限值、状态超时、通信/控制间隔 watchdog、控制权占用检查、遥控器 Select/B 停止以及3秒时长。
+第三次 raw-policy 试验完成0.2m/s指令3秒，150次策略命令，273次总姿态/策略命令，结束后发送1秒阻尼。
+最大机身倾角0.11175rad（6.4度），最大腿速7.235rad/s，最大目标跟踪误差1.202rad，平均推理3.398ms。
+双膝实际角度变化范围分别0.621rad、0.516rad。实际位移没有测量，指令完成不能视为稳定行走已验证。
+本模型只输出双腿12动作，上肢17电机按配置固定，结束阻尼后手臂会放下。
+
+容器内启动（会驱动电机；操作前仍需现场准备完成）：
+cd /workspace/g1_walk
+bash run_trial.sh --execute --raw-policy --speed 0.2 --seconds 3
+
+只读检查：bash run_trial.sh
+官方控制权释放：使用 release_controller.py（会释放官方控制器），不是只读操作。
+不要在有官方控制器占用或其他电机指令发布者时启动。
+
+tmux 已建立在容器内，socket名 g1walk3000，session名 diagnostic。
+从主机接入：
+docker exec -it -u devuser g1-lab-dev tmux -L g1walk3000 attach -t diagnostic
+窗口0为只读诊断，窗口1为额外限位试验，窗口2 rawtrial 为原始策略3秒试验，均保留退出输出。
+
+日志：trial_forward3s_raw.log、trial_result.json（最近一次）及带时间戳的trial_result_*.json。
+首次试验保存为 trial_result_first_controller_conflict.json。
+controller_release.json 为成功释放记录，diagnostic_readonly.json 为首次只读诊断。
+注意：遥控网关 abotclaw_teleop_gw 被外部服务重新拉起；原 abotclaw_teleop 曾被停止。运行前不能仅依赖 docker stop，必须验证控制权。

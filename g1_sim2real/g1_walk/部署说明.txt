@@ -1,0 +1,101 @@
+G1 Walk model_3000 部署说明（2026-10-03）
+
+一、下载和来源
+已通过 SSH A10 下载：
+/home/ubuntu/binjie/unitree_rl_gym/logs/g1_walk/Oct03_16-32-54_/model_3000.pt
+原请求的路径重复了 /home/ubuntu/binjie/unitree_rl_gym/，以上为实际路径。
+本地包：/Users/binjie/Documents/ChatGPT/宇树g1/a10_g1_walk_Oct03_16-32-54/
+原始 checkpoint 为 777570 字节，SHA256：
+19ec0bf18c9d25da5c07d0d19d779de92a4bcd725157fd3a7dfa74efbbd3258d
+已与 A10 校验一致。源代码及未提交的 g1_walk 训练配置已保存在 unitree_rl_gym_source.tar.gz，并已解压到 unitree_rl_gym/。
+仓库 commit、rsl_rl commit、文件哈希见 manifest.json。
+A10 上仍有训练进程，下载和 CPU 导出没有终止训练。
+
+二、不能直接把 model_3000.pt 给实机程序
+model_3000.pt 是训练 checkpoint；deploy_real.py 和 deploy_mujoco.py 调用 torch.jit.load，需要 TorchScript 策略。
+本次已用仓库 legged_gym/utils/helpers.py 中原版 PolicyExporterLSTM 导出：policy_lstm_1.pt。
+为避免覆盖其他策略，部署副本为：
+unitree_rl_gym/deploy/models/g1_walk_Oct03_16-32-54/policy_lstm_3000.pt
+已按 strict=True 加载原 checkpoint；导出后单步输出与原 Actor 最大绝对误差为 0，reset_memory 已验证；保存前已清零 LSTM 状态。
+verification.json 记录了结果。checkpoint 自身 iter 字段为 0，因此按所指定文件名标识为 model_3000；该字段不能独立证明训练迭代数。
+
+仓库标准 Play/导出方式（A10，供复现；这次用 CPU 直接导出，无需重新运行 Play）：
+cd /home/ubuntu/binjie/unitree_rl_gym
+conda activate unitree-rl
+python legged_gym/scripts/play.py --task=g1_walk --experiment_name=g1_walk --load_run=Oct03_16-32-54_ --checkpoint=3000 --headless --num_envs=1
+Play 默认写 logs/g1_walk/exported/policies/policy_lstm_1.pt。
+指定 task=g1_walk 和 checkpoint=3000，避免误加载 g1 或训练进程产生的新 checkpoint。
+
+三、输入输出约定
+模型：LSTM(47,64)，1 层；Actor 为 64→32→12，ELU。
+47 维单帧观测（内部 LSTM 保存历史，不是拼接六帧）：
+0:3    骨盆角速度 ×0.25
+3:6    骨盆坐标系投影重力，四元数 wxyz，直立时约 [0,0,-1]
+6:9    [vx,vy,yaw_rate] ×[2,2,0.25]
+9:21   双腿关节角减默认角度
+21:33  双腿关节速度 ×0.05
+33:45  上一步策略动作
+45:47  sin/cos 相位，周期 0.8 秒
+动作：12 维；目标角=默认角+0.25×动作。
+每条腿关节顺序：hip_pitch, hip_roll, hip_yaw, knee, ankle_pitch, ankle_roll。
+SDK 电机索引：左腿 0–5，右腿 6–11。
+每条腿默认角度：[-0.1,0,0,0.3,-0.2,0]。
+每条腿 kp=[100,100,100,150,40,40]，kd=[2,2,2,4,2,2]。
+训练 dt=0.005、decimation=4；策略周期 0.02 秒（50 Hz）。
+训练模型为 g1_12dof.urdf；腰、双臂在训练模型中固定。
+实机配置面向 G1 29 电机：hg 消息，pelvis IMU，PR 模式；腰、双臂 12–28 共 17 个电机固定到配置目标（默认全零），不是由这个策略控制。
+此策略与本地之前的 86×6 观测、15 动作 ONNX 控制器不兼容；不能直接替换旧控制器权重。
+
+四、先运行 MuJoCo
+包内已准备独立配置：deploy/deploy_mujoco/configs/g1_walk_3000.yaml。
+在部署主机上复制整个 unitree_rl_gym/ 目录，保留 resources/ 和 deploy/models/。
+推理和 MuJoCo 不需要安装 Isaac Gym，也不需要训练用的 rsl_rl；需要 PyTorch、numpy、PyYAML、MuJoCo。A10 验证环境为 PyTorch 2.3.1、MuJoCo 3.2.3。
+进入复制后的仓库根目录，例如：
+cd /workspace/unitree_rl_gym
+export PYTHONPATH="$PWD:${PYTHONPATH:-}"
+python deploy/deploy_mujoco/deploy_mujoco.py g1_walk_3000.yaml
+该配置默认指令为 [0.5,0,0]，可调整 cmd_init。需要图形显示；macOS 的 MuJoCo viewer 通常应通过 mjpython 启动。
+
+本次在 A10 用仓库 scripts/eval_g1_walk_sim2sim.py 的 rollout 做 CPU 无界面验证，测试实际导出的 TorchScript，每组 12 秒：
+指令 [0,0,0]：未触发跌倒判定，平均 vx=0.014 m/s
+指令 [0.2,0,0]：未触发跌倒判定，平均 vx=0.209 m/s
+指令 [0.5,0,0]：未触发跌倒判定，平均 vx=0.493 m/s，vx RMSE=0.022 m/s
+指令 [0.8,0,0]：未触发跌倒判定，平均 vx=0.808 m/s
+指令 [0.5,0,0.4]：未触发跌倒判定，平均 yaw_rate=0.345 rad/s
+指令 [0.4,0.2,0]：未触发跌倒判定，平均 vy=0.139 m/s
+速度统计排除最初 1 秒。跌倒判定沿用仓库脚本：1 秒后重力 z>=-0.6 或高度<=0.45。
+这只验证了仓库 12 自由度模型和短时固定指令，没有验证 29 自由度整机、负载、延迟、现场地面或真实起步切换。
+
+五、实机部署命令与遥控器流程（本次未执行）
+部署主机需要与机器人 DDS 网络相通；<网卡名> 是这台部署主机上连接机器人的网卡，并非 A10 云服务器的网卡。
+依赖除 PyTorch/numpy/PyYAML 外还需 unitree_sdk2_python 及其 CycloneDDS 环境。仓库 doc/setup_zh.md 指示克隆 SDK 后 pip install -e .；已有机器人容器时优先复用其 SDK/DDS 环境。
+已准备：deploy/deploy_real/configs/g1_walk_3000.yaml。
+该配置 policy_path 指向本次导出；max_cmd 从原版 [0.8,0.5,1.57] 改为 [0.8,0.2,0.5]，对应训练横移和偏航范围，其余参数保留原版。
+训练前进范围为 0.2–0.8 m/s；零指令已做上述仿真测试，倒退没有训练，也没有本次验证。
+
+在仓库根目录：
+cd /workspace/unitree_rl_gym
+export PYTHONPATH="$PWD:${PYTHONPATH:-}"
+python deploy/deploy_real/deploy_real.py <网卡名> g1_walk_3000.yaml
+
+按仓库 deploy/deploy_real/README.zh.md 和代码：
+1. 吊装开机，零力矩状态，L2+R2 进入调试模式。
+2. 确认旧 ONNX、遥控速度桥等控制进程已退出，避免并发控制；本程序没有自动释放其他控制器的逻辑。
+3. 启动上述程序，收到 lowstate 后持续发送零力矩命令，等待 Start。
+4. 按 Start，程序用约 2 秒把双腿、腰和双臂移到配置默认姿态。
+5. 脚接地并确认姿态后按 A，开始策略闭环；零摇杆对应零速度指令，策略可能原地踏步。
+6. 左摇杆前后控制 vx、左右控制 vy；右摇杆左右控制 yaw_rate。先验证小幅前进，例如 0.2 m/s，避免倒退。
+7. Select 或主循环中的 Ctrl+C 退出，程序发送一次阻尼命令。
+
+仓库实机脚本是示例：尚未实现状态陈旧、跌倒倾角、目标跳变等保护；循环周期为推理/通信耗时再 sleep(0.02)，不是严格 50 Hz；启动阶段及任意异常的阻尼退出没有统一 finally 保证。因此实际吊装测试前应核对机器人型号、上肢零位和控制器占用，并按上述代码限制评估现场使用。
+
+六、相关源码
+legged_gym/envs/g1/g1_config.py：训练任务、网络、PD、资产
+legged_gym/envs/g1/g1_env.py：观测与相位
+legged_gym/utils/helpers.py：原版 LSTM TorchScript 导出器
+legged_gym/scripts/play.py：Play 与导出入口
+scripts/eval_g1_walk_sim2sim.py：本次复用的仿真 rollout
+ deploy/deploy_mujoco/deploy_mujoco.py：可视化仿真
+ deploy/deploy_real/deploy_real.py：实机控制流程
+ deploy/deploy_real/configs/g1_walk_3000.yaml：本次独立实机配置
+ deploy/deploy_real/README.zh.md：原仓库实机说明
